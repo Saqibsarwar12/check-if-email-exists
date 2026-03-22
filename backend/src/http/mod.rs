@@ -64,10 +64,10 @@ pub fn create_routes(
 pub async fn run_warp_server(
 	config: Arc<BackendConfig>,
 ) -> Result<Option<JobRunnerHandle>, anyhow::Error> {
-	let host = config
-		.http_host
+	let host = "0.0.0.0"
 		.parse::<IpAddr>()
-		.unwrap_or_else(|_| panic!("Invalid host: {}", config.http_host));
+		.unwrap();
+
 	// For backwards compatibility, we allow the port to be set via the
 	// environment variable PORT, instead of the new configuration file. The
 	// PORT environment variable takes precedence.
@@ -92,7 +92,7 @@ pub async fn run_warp_server(
 		None
 	};
 
-	info!(target: LOG_TARGET, host=?host,port=?port, "Server is listening");
+	info!(target: LOG_TARGET, host=?host, port=?port, "Server is listening");
 	warp::serve(routes).run((host, port)).await;
 
 	// Returning runner, because dropping it would stop the listener.
