@@ -64,10 +64,8 @@ pub fn create_routes(
 pub async fn run_warp_server(
 	config: Arc<BackendConfig>,
 ) -> Result<Option<JobRunnerHandle>, anyhow::Error> {
-	// Render requires binding to 0.0.0.0, not 127.0.0.1 / localhost.
 	let host = Ipv4Addr::UNSPECIFIED;
 
-	// Use PORT from environment when available.
 	let port = env::var("PORT")
 		.unwrap_or_else(|_| "10000".to_string())
 		.parse::<u16>()
