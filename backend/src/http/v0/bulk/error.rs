@@ -42,3 +42,15 @@ impl From<sqlx::Error> for BulkError {
 		BulkError::Db(e)
 	}
 }
+
+impl From<CsvError> for BulkError {
+	fn from(e: CsvError) -> Self {
+		BulkError::Csv(e)
+	}
+}
+
+impl From<serde_json::Error> for BulkError {
+	fn from(e: serde_json::Error) -> Self {
+		BulkError::Json(e)
+	}
+}
