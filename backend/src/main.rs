@@ -1,36 +1,63 @@
-pub async fn run_warp_server(
-    config: Arc<BackendConfig>,
-) -> Result<Option<JobRunnerHandle>, anyhow::Error> {
-    let host = "0.0.0.0"
-        .parse::<IpAddr>()
-        .expect("Invalid bind host");
+// Reacher - Email Verification
+// Copyright (C) 2018-2023 Reacher
 
-    let port = env::var("PORT")
-        .map(|port: String| {
-            port.parse::<u16>()
-                .unwrap_or_else(|_| panic!("Invalid port: {}", port))
-        })
-        .unwrap_or(config.http_port);
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
 
-    let routes = create_routes(Arc::clone(&config));
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
 
-    let is_bulk_enabled = env::var("RCH_ENABLE_BULK")
-        .unwrap_or_else(|_| "0".into())
-        == "1";
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-    let runner = if is_bulk_enabled {
-        let pg_pool = config.get_pg_pool().expect(
-            "Please set the RCH__STORAGE__POSTGRES__DB_URL environment when RCH_ENABLE_BULK is set",
-        );
-        let runner = v0::bulk::create_job_registry(&pg_pool).await?;
-        Some(runner)
-    } else {
-        None
-    };
+//! Main entry point of the `reacher_backend` binary. It has two `main`
+//! functions, depending on whether the `bulk` feature is enabled or not.
 
-    info!(target: LOG_TARGET, host = ?host, port = ?port, "Server is listening");
+use check_if_email_exists::{setup_sentry, LOG_TARGET};
+use reacher_backend::config::load_config;
+use reacher_backend::http::run_warp_server;
+use reacher_backend::worker::run_worker;
+use std::sync::Arc;
+use tracing::{debug, info};
 
-    warp::serve(routes).run((host, port)).await;
+const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-    Ok(runner)
+/// Run a HTTP server using warp with bulk endpoints.
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
+	// Initialize logging.
+	tracing_subscriber::fmt::init();
+
+	info!(target: LOG_TARGET, version=?CARGO_PKG_VERSION, "Running Reacher");
+	let mut config = load_config().await?;
+	config.connect().await?;
+
+	// SECURITY: Don't log full config as it likely contains secrets (DB_URL, etc)
+	debug!(target: LOG_TARGET, "{:#?}", config.get_verif_method());
+
+	// Setup sentry bug tracking.
+	let _guard: sentry::ClientInitGuard;
+	if let Some(sentry_config) = &config.sentry_dsn {
+		_guard = setup_sentry(sentry_config);
+	}
+
+	let config = Arc::new(config);
+
+	let server_future = run_warp_server(Arc::clone(&config));
+	let worker_future = async {
+		if config.worker.enable {
+			run_worker(config).await?;
+		}
+		Ok(())
+	};
+
+	tokio::try_join!(server_future, worker_future)?;
+
+	info!("Shutting down...");
+
+	Ok(())
 }
