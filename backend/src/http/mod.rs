@@ -25,7 +25,7 @@ use error::handle_rejection;
 pub use error::ReacherResponseError;
 use sqlxmq::JobRunnerHandle;
 use std::env;
-use std::net::IpAddr;
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 use tracing::info;
 pub use v0::check_email::post::CheckEmailRequest;
@@ -64,19 +64,14 @@ pub fn create_routes(
 pub async fn run_warp_server(
 	config: Arc<BackendConfig>,
 ) -> Result<Option<JobRunnerHandle>, anyhow::Error> {
-	let host = "0.0.0.0"
-		.parse::<IpAddr>()
-		.unwrap();
+	// Render requires binding to 0.0.0.0, not 127.0.0.1 / localhost.
+	let host = Ipv4Addr::UNSPECIFIED;
 
-	// For backwards compatibility, we allow the port to be set via the
-	// environment variable PORT, instead of the new configuration file. The
-	// PORT environment variable takes precedence.
+	// Use PORT from environment when available.
 	let port = env::var("PORT")
-		.map(|port: String| {
-			port.parse::<u16>()
-				.unwrap_or_else(|_| panic!("Invalid port: {}", port))
-		})
-		.unwrap_or(config.http_port);
+		.unwrap_or_else(|_| "10000".to_string())
+		.parse::<u16>()
+		.unwrap_or_else(|_| panic!("Invalid PORT"));
 
 	let routes = create_routes(Arc::clone(&config));
 
